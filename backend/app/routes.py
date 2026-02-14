@@ -1,25 +1,29 @@
 from flask import Blueprint, request, jsonify
 from . import db
 from .models import Trade, TradeLog
-from .price_service import get_btc_price_usd
+from .price_service import get_btc_price_usd, get_btc_stats_usd
 
 main = Blueprint("main", __name__)
 
 
 @main.route("/price/live", methods=["GET"])
 def price_live():
-    price = get_btc_price_usd()
-    if price is None:
+    stats = get_btc_stats_usd()
+    if stats is None or stats.get("price") is None:
         return jsonify({"error": "price_unavailable"}), 503
 
-    return jsonify({"symbol": "BTC/USD", "price": price})
+    return jsonify({
+        "symbol": "BTC/USD",
+        "price": stats["price"],
+        "change_24h": stats.get("change_24h"),
+        "change_percent_24h": stats.get("change_percent_24h")
+    })
 
 
 @main.route("/trade/create", methods=["POST"])
 def create_trade():
     data = request.get_json() or {}
 
-    # Basic input validation (minimal but important)
     required_fields = ["symbol", "buy_price", "sell_price", "stop_loss", "quantity"]
     missing = [f for f in required_fields if data.get(f) is None]
     if missing:
@@ -35,7 +39,6 @@ def create_trade():
     except (ValueError, TypeError):
         return jsonify({"error": "invalid_types"}), 400
 
-    # Create Trade row
     trade = Trade(
         user_id=user_id,
         symbol=symbol,
@@ -47,9 +50,8 @@ def create_trade():
     )
 
     db.session.add(trade)
-    db.session.commit()  # commit so trade.id exists
+    db.session.commit()  # so trade.id exists
 
-    # Create initial TradeLog row
     log = TradeLog(
         trade_id=trade.id,
         message="Trade created",
@@ -83,7 +85,6 @@ def trade_active():
         unrealized_pnl = None
         unrealized_pnl_percent = None
 
-        # Only compute P&L if position is open (bought)
         if t.status == "bought":
             unrealized_pnl = (current_price - t.buy_price) * t.quantity
             if t.buy_price != 0:
@@ -118,7 +119,6 @@ def trade_history():
 
     results = []
     for t in trades:
-        # last log usually corresponds to the final action (TP/SL)
         last_log = (
             TradeLog.query
             .filter_by(trade_id=t.id)
@@ -165,3 +165,7 @@ def trade_logs(trade_id: int):
         }
         for l in logs
     ])
+
+@main.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"}), 200
