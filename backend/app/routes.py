@@ -5,6 +5,9 @@ from .price_service import get_btc_price_usd, get_btc_stats_usd
 
 main = Blueprint("main", __name__)
 
+@main.route("/", methods=["GET"])
+def home():
+    return jsonify({"status": "ok", "service": "crypto-bot-backend"}), 200
 
 @main.route("/price/live", methods=["GET"])
 def price_live():
