@@ -9,19 +9,23 @@ function formatUSD(value) {
 }
 
 function StatusChip({ status }) {
-  const base = "text-xs px-2 py-1 rounded-md border w-fit";
+  const base = "text-xs px-2 py-1 rounded-md border w-fit font-medium";
   const map = {
     pending: "bg-yellow-500/10 text-yellow-300 border-yellow-500/20",
     bought: "bg-blue-500/10 text-blue-300 border-blue-500/20",
     sold: "bg-green-500/10 text-green-300 border-green-500/20",
     stopped: "bg-red-500/10 text-red-300 border-red-500/20",
   };
-  const cls = map[status] || "bg-gray-500/10 text-gray-200 border-gray-500/20";
-  return <span className={`${base} ${cls}`}>{String(status).toUpperCase()}</span>;
+  return (
+    <span className={`${base} ${map[status] || "bg-gray-500/10 text-gray-200 border-gray-500/20"}`}>
+      {String(status).toUpperCase()}
+    </span>
+  );
 }
 
 export default function App() {
   const [priceData, setPriceData] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const [activeTrades, setActiveTrades] = useState([]);
   const [historyTrades, setHistoryTrades] = useState([]);
@@ -29,7 +33,6 @@ export default function App() {
   const [selectedTradeId, setSelectedTradeId] = useState(null);
   const [logs, setLogs] = useState([]);
 
-  // Trade form state
   const [form, setForm] = useState({
     symbol: "BTC/USDT",
     buy_price: "",
@@ -54,18 +57,17 @@ export default function App() {
         setPriceData(p);
         setActiveTrades(a);
         setHistoryTrades(h);
+        setLastUpdated(new Date());
 
         if (!selectedTradeId && a.length > 0) {
           setSelectedTradeId(a[0].id);
         }
 
-        // If selected trade moved out of active (sold/stopped), auto-select first active
         if (selectedTradeId && a.length > 0) {
           const stillActive = a.some((t) => t.id === selectedTradeId);
           if (!stillActive) setSelectedTradeId(a[0].id);
         }
 
-        // If there are no active trades, clear selection + logs
         if (a.length === 0) {
           setSelectedTradeId(null);
           setLogs([]);
@@ -78,10 +80,9 @@ export default function App() {
     fetchAll();
     const id = setInterval(fetchAll, 3000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTradeId]);
 
-  // --- Poll logs for selected trade ---
+  // --- Poll logs ---
   useEffect(() => {
     const fetchLogs = async () => {
       if (!selectedTradeId) {
@@ -105,7 +106,7 @@ export default function App() {
     if (!priceData) return null;
     const c = priceData.change_24h;
     const pct = priceData.change_percent_24h;
-    if (c === null || pct === null || c === undefined || pct === undefined) return null;
+    if (c == null || pct == null) return null;
     const dir = c > 0 ? "up" : c < 0 ? "down" : "flat";
     return { c, pct, dir };
   }, [priceData]);
@@ -120,7 +121,9 @@ export default function App() {
   const dayArrow =
     todayChange?.dir === "up" ? "▲" : todayChange?.dir === "down" ? "▼" : "•";
 
-  const currentPrice = priceData?.price ? Number(priceData.price) : null;
+  const currentPrice = priceData?.price
+    ? Number(priceData.price)
+    : null;
 
   const handleChange = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -140,7 +143,6 @@ export default function App() {
         user_id: 1,
       };
 
-      // Basic validation
       if (
         !payload.symbol ||
         !Number.isFinite(payload.buy_price) ||
@@ -157,7 +159,6 @@ export default function App() {
         return;
       }
 
-      // Reasonable trading rules (still allow edge cases, but guide user)
       if (payload.stop_loss >= payload.buy_price) {
         setFormError("Stop-loss should be below Buy Price.");
         return;
@@ -166,8 +167,12 @@ export default function App() {
       const res = await apiPost("/trade/create", payload);
       setFormSuccess(`Trade created (id: ${res.trade_id})`);
 
-      // clear just the price fields to encourage next entry
-      setForm((prev) => ({ ...prev, buy_price: "", sell_price: "", stop_loss: "" }));
+      setForm((prev) => ({
+        ...prev,
+        buy_price: "",
+        sell_price: "",
+        stop_loss: "",
+      }));
     } catch (e) {
       setFormError(e.message);
     }
@@ -176,14 +181,24 @@ export default function App() {
   return (
     <div className="min-h-screen bg-black text-white p-8">
       <div className="max-w-7xl mx-auto">
+
+        {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Crypto Bot Platform</h1>
-          <div className="text-sm text-gray-400">Smart Polling • 3s</div>
+          <div className="text-sm text-gray-400">
+            Smart Polling • 3s
+            {lastUpdated && (
+              <span className="ml-3 text-gray-500">
+                Updated: {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Top row */}
+        {/* Price + Form */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Price card */}
+
+          {/* Price Card */}
           <div className="rounded-xl bg-zinc-900 border border-zinc-800 p-5">
             <div className="text-sm text-gray-400">BTC / USD</div>
 
@@ -191,24 +206,25 @@ export default function App() {
               {currentPrice ? `$${formatUSD(currentPrice)}` : "Loading..."}
             </div>
 
-            <div className="mt-2 text-sm">
+            <div className={`mt-2 text-sm ${dayColor}`}>
               {todayChange ? (
-                <div className={dayColor}>
+                <>
                   {dayArrow} 24h: {todayChange.c > 0 ? "+" : ""}
-                  {formatUSD(todayChange.c)} ({todayChange.pct > 0 ? "+" : ""}
+                  {formatUSD(todayChange.c)} (
+                  {todayChange.pct > 0 ? "+" : ""}
                   {Number(todayChange.pct).toFixed(2)}%)
-                </div>
+                </>
               ) : (
-                <div className="text-gray-500">24h change: unavailable</div>
+                <span className="text-gray-500">24h change unavailable</span>
               )}
             </div>
 
             <div className="mt-3 text-xs text-gray-500">
-              Price from CoinGecko • Cached to avoid rate limits
+              CoinGecko • Cached to prevent rate limits
             </div>
           </div>
 
-          {/* Trade form */}
+          {/* Trade Form */}
           <div className="rounded-xl bg-zinc-900 border border-zinc-800 p-5 lg:col-span-2">
             <div className="text-sm text-gray-400">Trade Setup</div>
 
@@ -222,24 +238,35 @@ export default function App() {
               </select>
 
               <input
+                type="number"
+                step="any"
                 className="bg-black border border-zinc-700 rounded-lg p-2"
                 placeholder="Buy Price"
                 value={form.buy_price}
                 onChange={(e) => handleChange("buy_price", e.target.value)}
               />
+
               <input
+                type="number"
+                step="any"
                 className="bg-black border border-zinc-700 rounded-lg p-2"
-                placeholder="Sell Price (Take Profit)"
+                placeholder="Take Profit"
                 value={form.sell_price}
                 onChange={(e) => handleChange("sell_price", e.target.value)}
               />
+
               <input
+                type="number"
+                step="any"
                 className="bg-black border border-zinc-700 rounded-lg p-2"
                 placeholder="Stop Loss"
                 value={form.stop_loss}
                 onChange={(e) => handleChange("stop_loss", e.target.value)}
               />
+
               <input
+                type="number"
+                step="any"
                 className="bg-black border border-zinc-700 rounded-lg p-2"
                 placeholder="Quantity"
                 value={form.quantity}
@@ -261,9 +288,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Middle row */}
+        {/* Active + Logs */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Active trades */}
+
+          {/* Active Trades */}
           <div className="rounded-xl bg-zinc-900 border border-zinc-800 p-5 lg:col-span-2">
             <div className="text-sm text-gray-400">Active Trades</div>
 
@@ -273,24 +301,26 @@ export default function App() {
                   <tr className="border-b border-zinc-800">
                     <th className="text-left py-2">ID</th>
                     <th className="text-left py-2">Symbol</th>
+                    <th className="text-left py-2">Current</th>
                     <th className="text-left py-2">Status</th>
                     <th className="text-left py-2">Buy</th>
                     <th className="text-left py-2">TP</th>
                     <th className="text-left py-2">SL</th>
-                    <th className="text-left py-2">Unrealized P&L</th>
+                    <th className="text-left py-2">Unrealized</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activeTrades.map((t) => (
                     <tr
                       key={t.id}
-                      className={`border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 ${
-                        selectedTradeId === t.id ? "bg-zinc-800/50" : ""
-                      }`}
+                      className="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer"
                       onClick={() => setSelectedTradeId(t.id)}
                     >
                       <td className="py-2">{t.id}</td>
                       <td className="py-2">{t.symbol}</td>
+                      <td className="py-2">
+                        {t.current_price ? formatUSD(t.current_price) : "-"}
+                      </td>
                       <td className="py-2">
                         <StatusChip status={t.status} />
                       </td>
@@ -303,18 +333,18 @@ export default function App() {
                             ? "text-green-400"
                             : t.unrealized_pnl < 0
                             ? "text-red-400"
-                            : "text-gray-300"
+                            : "text-gray-400"
                         }`}
                       >
-                        {t.unrealized_pnl === null || t.unrealized_pnl === undefined
-                          ? "-"
-                          : formatUSD(t.unrealized_pnl)}
+                        {t.unrealized_pnl != null
+                          ? formatUSD(t.unrealized_pnl)
+                          : "-"}
                       </td>
                     </tr>
                   ))}
                   {activeTrades.length === 0 && (
                     <tr>
-                      <td className="py-3 text-gray-500" colSpan={7}>
+                      <td colSpan={8} className="py-3 text-gray-500">
                         No active trades
                       </td>
                     </tr>
@@ -324,29 +354,29 @@ export default function App() {
             </div>
           </div>
 
-          {/* Live logs */}
+          {/* Logs */}
           <div className="rounded-xl bg-zinc-900 border border-zinc-800 p-5">
             <div className="text-sm text-gray-400">Live Logs</div>
-
             <div className="mt-3 h-72 overflow-auto space-y-2">
               {logs.map((l) => (
                 <div
                   key={l.id}
-                  className="text-xs text-gray-300 border border-zinc-800 rounded-lg p-2"
+                  className="text-xs border border-zinc-800 rounded-lg p-2"
                 >
                   <div className="text-gray-400">
                     {new Date(l.timestamp).toLocaleTimeString()}
                   </div>
                   <div>{l.message}</div>
-                  <div className="text-gray-500">Price: {formatUSD(l.price)}</div>
+                  <div className="text-gray-500">
+                    Price: {formatUSD(l.price)}
+                  </div>
                 </div>
               ))}
 
               {!selectedTradeId && (
-                <div className="text-gray-500 text-sm">Select a trade to view logs</div>
-              )}
-              {selectedTradeId && logs.length === 0 && (
-                <div className="text-gray-500 text-sm">No logs yet</div>
+                <div className="text-gray-500 text-sm">
+                  Select a trade to view logs
+                </div>
               )}
             </div>
           </div>
@@ -365,7 +395,7 @@ export default function App() {
                   <th className="text-left py-2">Status</th>
                   <th className="text-left py-2">Buy</th>
                   <th className="text-left py-2">Exit</th>
-                  <th className="text-left py-2">Realized P&L</th>
+                  <th className="text-left py-2">P&L</th>
                   <th className="text-left py-2">Time</th>
                 </tr>
               </thead>
@@ -379,14 +409,20 @@ export default function App() {
                     </td>
                     <td className="py-2">{formatUSD(t.buy_price)}</td>
                     <td className="py-2">
-                      {t.exit_price !== null ? formatUSD(t.exit_price) : "-"}
+                      {t.exit_price != null
+                        ? formatUSD(t.exit_price)
+                        : "-"}
                     </td>
                     <td
                       className={`py-2 ${
-                        t.pnl > 0 ? "text-green-400" : t.pnl < 0 ? "text-red-400" : "text-gray-300"
+                        t.pnl > 0
+                          ? "text-green-400"
+                          : t.pnl < 0
+                          ? "text-red-400"
+                          : "text-gray-400"
                       }`}
                     >
-                      {t.pnl !== null ? formatUSD(t.pnl) : "-"}
+                      {t.pnl != null ? formatUSD(t.pnl) : "-"}
                     </td>
                     <td className="py-2 text-gray-400">
                       {new Date(t.created_at).toLocaleString()}
@@ -395,7 +431,7 @@ export default function App() {
                 ))}
                 {historyTrades.length === 0 && (
                   <tr>
-                    <td className="py-3 text-gray-500" colSpan={7}>
+                    <td colSpan={7} className="py-3 text-gray-500">
                       No completed trades yet
                     </td>
                   </tr>
